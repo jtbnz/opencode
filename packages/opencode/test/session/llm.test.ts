@@ -386,6 +386,64 @@ describe("session.llm.ai-sdk adapter", () => {
     expect(stepFinish.usage).toBeUndefined()
   })
 
+  test("carries provider response headers onto step-finish", async () => {
+    // Proxies that route to a model chosen at request time (e.g. a LiteLLM auto-router)
+    // only report the model they actually picked in the HTTP response headers. Dropping
+    // them here leaves callers unable to tell which model produced the response.
+    const events = await adapt([
+      {
+        type: "finish-step",
+        response: {
+          id: "response-1",
+          timestamp: new Date(0),
+          modelId: "gpt-test",
+          headers: { "x-litellm-model-api-base": "https://example.invalid/v1" },
+        },
+        finishReason: "stop",
+        rawFinishReason: "stop",
+        providerMetadata: undefined,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          totalTokens: 2,
+          inputTokenDetails: { noCacheTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          outputTokenDetails: { textTokens: 1, reasoningTokens: 0 },
+        },
+      },
+    ])
+
+    expect(events).toHaveLength(1)
+    const stepFinish = events[0]
+    if (stepFinish.type !== "step-finish") throw new Error("expected step-finish")
+    expect(stepFinish.responseHeaders).toEqual({ "x-litellm-model-api-base": "https://example.invalid/v1" })
+  })
+
+  test("omits response headers when the provider returns none", async () => {
+    // Providers that do not surface headers must leave the field unset rather than
+    // attaching an empty object, so consumers can distinguish "no headers" from "none yet".
+    const events = await adapt([
+      {
+        type: "finish-step",
+        response: { id: "response-1", timestamp: new Date(0), modelId: "gpt-test" },
+        finishReason: "stop",
+        rawFinishReason: "stop",
+        providerMetadata: undefined,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          totalTokens: 2,
+          inputTokenDetails: { noCacheTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          outputTokenDetails: { textTokens: 1, reasoningTokens: 0 },
+        },
+      },
+    ])
+
+    expect(events).toHaveLength(1)
+    const stepFinish = events[0]
+    if (stepFinish.type !== "step-finish") throw new Error("expected step-finish")
+    expect(stepFinish.responseHeaders).toBeUndefined()
+  })
+
   test("reuses adapter state cleanly across streams once finish has fired", async () => {
     // adapterState() is meant to be per-stream, but the only thing finish currently clears
     // is toolNames — step, text counters, and the current text/reasoning IDs all leak

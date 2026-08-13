@@ -443,6 +443,10 @@ const layer = Layer.effect(
             ctx.assistantMessage.finish = value.reason
             ctx.assistantMessage.cost += usage.cost
             ctx.assistantMessage.tokens = usage.tokens
+            // Store provider response headers so plugins can read routing
+            // metadata (e.g. x-litellm-model-api-base from a LiteLLM proxy).
+            if (value.responseHeaders && Object.keys(value.responseHeaders).length > 0)
+              ctx.assistantMessage.responseHeaders = value.responseHeaders
             yield* session.updatePart({
               id: PartID.ascending(),
               reason: value.reason,
